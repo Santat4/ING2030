@@ -1,5 +1,4 @@
 from selenium import webdriver
-import os
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -11,10 +10,12 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from dotenv import load_dotenv
 from time import sleep
+from datetime import datetime, date, timedelta
+import os
 import re
-from datetime import datetime
 import sys
-
+import requests
+import calendar
 
 def scraping_emails():
     
@@ -82,7 +83,19 @@ def scraping_emails():
     # First use the search bar to search from keyword
     try:
         search_bar = driver.find_element(By.NAME, "q")
-        search_query = f"from:{bank} after:2025/03/31 before:2025/05/01"
+        #Search_query abril:
+        #search_query = f"from:{bank} after:2025/03/31 before:2025/05/01"
+        # Obtener la fecha actual
+        hoy = date.today()
+        año = hoy.year
+        mes = hoy.month
+        # Calcular primer y último día del mes
+        primer_dia = date(año, mes, 1)
+        ultimo_dia = date(año, mes, calendar.monthrange(año, mes)[1])
+        # Generar la query
+        search_query = f"from:{bank} after:{primer_dia.strftime('%Y/%m/%d')} before:{(ultimo_dia + timedelta(days=1)).strftime('%Y/%m/%d')}"
+        print(search_query)
+
         search_bar.send_keys(search_query)
         search_bar.send_keys(Keys.RETURN)
 
@@ -103,7 +116,7 @@ def scraping_emails():
         numero = 0
         frase = main_page + "/p"
         juntos = ""
-        sleep(1)
+        #sleep(1)
     
         for k in range(2, 10000):
             if verificar_mensaje_no_resultados(driver=driver):
@@ -211,7 +224,7 @@ def scraping_emails():
                 
                 # 2. Expandir el email en la misma vista
                 email_element.click()
-                sleep(1)  # Espera para la animación
+                #sleep(1)  # Espera para la animación
                 
                 expanded_email = WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.XPATH,
@@ -243,7 +256,7 @@ def scraping_emails():
             finally:
                 # 5. Colapsar el email (solo si sigue expandido)
                 driver.back()
-                sleep(2)
+                #sleep(1)
             return None
 
         # The function extract the value information of transfer of money emails.
@@ -259,7 +272,7 @@ def scraping_emails():
                     
                     # 2. Expandir el email en la misma vista
                     email_element.click()
-                    sleep(1)  # Espera para la animación
+                    #sleep(1)  # Espera para la animación
                     
                     expanded_email = WebDriverWait(driver, 15).until(
                     EC.presence_of_element_located((By.XPATH,
@@ -345,7 +358,7 @@ def scraping_emails():
                 finally:
                     # 5. Colapsar el email (solo si sigue expandido)
                     driver.back()
-                    sleep(2)
+                    #sleep(1)
                 return None
 
             
@@ -579,7 +592,7 @@ def scraping_emails():
                 finally:
                     # 5. Colapsar el email (solo si sigue expandido)
                     driver.back()
-                    sleep(2)
+                    sleep(1)
                 return None
 
             def Edwards_Bank_Case(driver, email_element):
@@ -782,7 +795,7 @@ def scraping_emails():
                 
                 # 2. Expandir el email en la misma vista
                 email_element.click()
-                sleep(2)  # Espera para la animación
+                #sleep(1)  # Espera para la animación
                 
                 expanded_email = WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.XPATH,
@@ -814,7 +827,7 @@ def scraping_emails():
             finally:
                 # 5. Colapsar el email (solo si sigue expandido)
                 driver.back()
-                sleep(2)
+                #sleep(1)
             return None
 
         def texto_a_fecha_numerica_custom(fecha_str):
@@ -1046,7 +1059,7 @@ def calcular_total():
         return total
 
 def mandar_total(monto):
-    chrome_options = Options()
+    """chrome_options = Options()
     chrome_options.add_experimental_option(name="excludeSwitches", value=["enable-logging", "enable-automation"])
     chrome_options.add_experimental_option(name="useAutomationExtension", value=False)
     chrome_options.add_argument("--start-maximized")
@@ -1054,26 +1067,78 @@ def mandar_total(monto):
     service = Service(ChromeDriverManager().install())
 
     driver2 = webdriver.Chrome(service=service, options=chrome_options)
+    # (Opcional) ruta a tu ChromeDriver
+    service = Service('/usr/local/bin/chromedriver')  # Cambia si es necesario
 
+    # Configura opciones para evitar advertencias o errores
+    options = webdriver.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-features=BlockExternalProtocolInWee,NetworkService,NetworkServiceInProcess')
+    options.add_argument('--disable-background-networking')
+    options.add_argument('--disable-default-apps')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-sync')
+    options.add_argument('--no-first-run')
+    options.add_argument('--no-default-browser-check')
+    
+    driver2 = webdriver.Chrome(service=service, options=options)
     # Here we get the main page of mail from google
     driver2.get("http://192.168.4.1")
-    sleep(2)
+    sleep(3)
 
     # Encontrar el campo de texto (puedes ajustar el selector si cambia)
-    input_box = driver2.find_element(By.NAME, "mensaje")
-    input_box.send_keys(monto)
+    input_box = WebDriverWait(driver2, 10).until(
+        EC.presence_of_element_located((By.NAME, "message"))
+    )
+    string = "Saldo: $" + str(monto)
+    input_box.send_keys(string)
 
     # Enviar el formulario (puede ser presionando Enter o clic en el botón)
     input_box.send_keys(Keys.ENTER)
     # Esperar un poco para ver el resultado
-    sleep(3)
-    # Cerrar el navegador (si quieres)
-    driver2.quit()
+    sleep(5)
+    driver2.quit()"""
 
+    string = "Saldo: $" + str(monto)
+    try:
+        response = requests.get("http://192.168.4.1", params={"message": string}, timeout=5)
+        if response.ok:
+            print("Mensaje enviado correctamente.")
+        else:
+            print("Error al enviar:", response.status_code)
+    except requests.exceptions.RequestException as e:
+        print("Error de conexión al ESP:", e)
+
+def calcular_gasto_diario(saldo):
+    hoy = date.today()
+    dias_totales = calendar.monthrange(hoy.year, hoy.month)[1]
+    dias_restantes = dias_totales - hoy.day + 1  # incluye hoy
+
+    if dias_restantes <= 0:
+        return 0  # Evita división por cero
+
+    gasto_diario = saldo / dias_restantes
+    return round(gasto_diario)
+
+def calcular_porcentaje_restante(saldo_actual, saldo_inicial):
+    if saldo_inicial == 0:
+        return 0  # Evita división por cero
+    
+    porcentaje = round((saldo_actual / saldo_inicial) * 100)
+    string = f"Porcentaje restante: {porcentaje}%"
+    return string
 
 if __name__ == "__main__":
     saldo_inicial("1/04/2025", "00:00", "+150000", "Cantidad inicial", "****2094")
     scraping_emails()
     total = calcular_total()
-    print("Total: ", total)
+    gasto_diario = calcular_gasto_diario(total)
+    porcentaje_restante = calcular_porcentaje_restante(total, 150000)
+    string = "Saldo: $" + str(total)
+    print(string)
+    string = "Hoy deberías gastar: $" + str(gasto_diario)
+    print(string)
+    print("Porcentaje restante: ", porcentaje_restante)
+    sleep(20)
     mandar_total(total)
