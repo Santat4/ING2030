@@ -8,29 +8,184 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from time import sleep
 from datetime import datetime, date, timedelta
+from pathlib import Path
+from collections import defaultdict
 import os
 import re
 import sys
 import requests
 import calendar
 
-def scraping_emails():
+# Diccionario para traducir meses en español a números
+MESES_ES = {
+    'enero': 1, 'ene': 1, 'febrero': 2, 'feb': 2, 'marzo': 3, 'mar': 3, 'abril': 4, 'abr': 4, 
+    'mayo': 5, 'may': 5, 'junio': 6, 'jun': 6, 'julio': 7, 'jul': 7, 'agosto': 8, 'ago': 8,
+    'septiembre': 9, 'sep': 9, 'octubre': 10, 'oct': 10, 'noviembre': 11, 'nov': 11, 
+    'diciembre': 12, 'dic': 12
+}
+
+def saldo_inicial(Day, Hour, amount, place, card_number):
+    archivo = open("Transactions", "w")
+    archivo.close()
+    
+    with open("Transactions", "r") as f:
+        lineas = f.readlines()
+        for k in range(len(lineas)):
+            lineas[k] = lineas[k].rstrip().split(";")
+    if [f"{Day}",f"{Hour}",f"{amount}",f"{place}",f"{card_number}"] in lineas:
+        pass
+    else:
+        writting_on_txt(Day, Hour, amount, place, card_number)
+        sort_transaction_txt()
+
+# We need to do a efficient code so if we already search an email we don't need to search again
+# for each email we extract the next information
+# Day, Hour, amount, income or outcome with a sign in amount and place.
+# To separate we will use ;
+def writting_on_txt(Day, Hour, amount, place, card_number):
+    with open("Transactions", "a") as f:
+       print(f"{Day};{Hour};{amount};{place};{card_number}", file=f)
+
+
+
+# In order to do an efficient Code, we need to sort the Transactions txt for hour and Day
+# This function will be use at the end of next_page function when all new transactions are already upload
+def sort_transaction_txt():
+    with open("Transactions", "r") as f:
+        # We put the txt as a arrange of list
+        lineas = f.readlines()
+        for k in range(len(lineas)):
+            lineas[k] = lineas[k].rstrip().split(";")
+        
+        for k in range(len(lineas)):
+            lineas[k][1] = datetime.strptime(lineas[k][1], "%H:%M")
+            lineas[k][0] = datetime.strptime(lineas[k][0], "%d/%m/%Y")
+        
+        lineas_por_hora = sorted(lineas, key=lambda x: x[1], reverse=True)
+        lineas_por_dia = sorted(lineas_por_hora, key=lambda x: x[0], reverse=True)
+
+        for k in range(len(lineas_por_dia)):
+            lineas_por_dia[k][0] = datetime.strftime(lineas_por_dia[k][0], "%d/%m/%Y")
+            lineas_por_dia[k][1] = datetime.strftime(lineas_por_dia[k][1], "%H:%M")
+        
+        with open("transactions", "w") as f:
+            for k in range(len(lineas_por_dia)):
+                print(f"{lineas_por_dia[k][0]};{lineas_por_dia[k][1]};{lineas_por_dia[k][2]};{lineas_por_dia[k][3]};{lineas_por_dia[k][4]}", file=f)
+
+# Return the balance of Transaction.txt
+def calcular_total():
+    with open("Transactions", "r") as f:
+        total = 0
+        lineas = f.readlines()
+        for k in range(len(lineas)):
+            lineas[k] = lineas[k].rstrip().split(";")
+            try:
+                total += int(lineas[k][2])
+            except:
+                continue
+        return total
+
+def mandar_total(monto):
+    """chrome_options = Options()
+    chrome_options.add_experimental_option(name="excludeSwitches", value=["enable-logging", "enable-automation"])
+    chrome_options.add_experimental_option(name="useAutomationExtension", value=False)
+    chrome_options.add_argument("--start-maximized")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    service = Service(ChromeDriverManager().install())
+
+    driver2 = webdriver.Chrome(service=service, options=chrome_options)
+    # (Opcional) ruta a tu ChromeDriver
+    service = Service('/usr/local/bin/chromedriver')  # Cambia si es necesario
+
+    # Configura opciones para evitar advertencias o errores
+    options = webdriver.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-features=BlockExternalProtocolInWee,NetworkService,NetworkServiceInProcess')
+    options.add_argument('--disable-background-networking')
+    options.add_argument('--disable-default-apps')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-sync')
+    options.add_argument('--no-first-run')
+    options.add_argument('--no-default-browser-check')
+    
+    driver2 = webdriver.Chrome(service=service, options=options)
+    # Here we get the main page of mail from google
+    driver2.get("http://192.168.4.1")
+    sleep(3)
+
+    # Encontrar el campo de texto (puedes ajustar el selector si cambia)
+    input_box = WebDriverWait(driver2, 10).until(
+        EC.presence_of_element_located((By.NAME, "message"))
+    )
+    string = "Saldo: $" + str(monto)
+    input_box.send_keys(string)
+
+    # Enviar el formulario (puede ser presionando Enter o clic en el botón)
+    input_box.send_keys(Keys.ENTER)
+    # Esperar un poco para ver el resultado
+    sleep(5)
+    driver2.quit()"""
+
+    string = "Saldo: $" + str(monto)
+    try:
+        response = requests.get("http://192.168.4.1", params={"message": string}, timeout=5)
+        if response.ok:
+            print("Mensaje enviado correctamente.")
+        else:
+            print("Error al enviar:", response.status_code)
+    except requests.exceptions.RequestException as e:
+        print("Error de conexión al ESP:", e)
+
+def calcular_gasto_diario(saldo):
+    hoy = date.today()
+    dias_totales = calendar.monthrange(hoy.year, hoy.month)[1]
+    dias_restantes = dias_totales - hoy.day + 1  # incluye hoy
+
+    if dias_restantes <= 0:
+        return 0  # Evita división por cero
+
+    gasto_diario = saldo / dias_restantes
+    return round(gasto_diario)
+
+def calcular_porcentaje_restante(saldo_actual, saldo_inicial):
+    if saldo_inicial == 0:
+        return 0  # Evita división por cero
+    
+    porcentaje = round((saldo_actual / saldo_inicial) * 100)
+    string = f"Porcentaje restante: {porcentaje}%"
+    return string
+
+def scraping_emails(args):
     
     #env_path = r"C:\Users\csanh\OneDrive\Escritorio\PDF PUC\Semestre 5\Innovación, desarollo y emprendimiento\Codigo web scrapping\credenciales.env"
     env_path = os.path.join(os.path.dirname(__file__), "credenciales.env")
-
-    load_dotenv(env_path)
     parar = False
+    
+    if len(args) >= 5:
 
-    username = os.getenv("mail_user")
-    password = os.getenv("mail_password")
-    bank = os.getenv("bank_user")
+        correo = args[1]
+        password = args[2]
+        monto_inicial = "+" + sys.argv[3]
+        banco = ' '.join(args[4:])  # Une todo lo que venga después como nombre del banco
 
-    print(username, password, bank)
-
+        set_key(str(env_path), "mail_user", correo)
+        set_key(str(env_path), "mail_password", password)
+        set_key(str(env_path), "bank_user", banco)
+        print("✅ Datos guardados en .env")
+    
+    else:
+        
+        load_dotenv(env_path)
+        correo = os.getenv("mail_user")
+        password = os.getenv("mail_password")
+        monto_inicial = "+" + os.getenv("monto_inicial")
+        banco = os.getenv("bank_user")
+             
+    saldo_inicial("1/05/2025", "00:00", monto_inicial, "Cantidad inicial", "****2094")
     chrome_options = Options()
     chrome_options.add_experimental_option(name="excludeSwitches", value=["enable-logging", "enable-automation"])
     chrome_options.add_experimental_option(name="useAutomationExtension", value=False)
@@ -47,11 +202,10 @@ def scraping_emails():
     # Name field and send buton
     try:
         name_field = driver.find_element(By.ID, "identifierId")
-        #print("Campo localizado")
-        name_field.send_keys(username)
-        #print("Campo llenado")
+        print("💌 Ingresando el correo...")
+        name_field.send_keys(correo)
+        print(f"✅ Correo ingresado: {correo}")
     except Exception as e:
-        #print("Error en campo de nombre", e)
         driver.close()
 
     try:
@@ -60,14 +214,16 @@ def scraping_emails():
         )
         next_button.click()
     except Exception as e:
-        #print("Errpr en boton mandar", e)
+        print("Error en boton mandar", e)
         driver.close()
 
     try:
         password_field = driver.find_element(By.NAME, "Passwd")
+        print("🔐 Ingresando la contraseña...")
         password_field.send_keys(password)
+        print(f"✅ Contraseña ingresada")
     except Exception as e:
-        #print("Problemas en el Campo de Contraseña")
+        print("Problemas en el Campo de Contraseña")
         driver.close()
 
     try:
@@ -76,7 +232,7 @@ def scraping_emails():
         )
         next_button.click()
     except Exception as e:
-        #print("Errpr en boton mandar", e)
+        print("Error en boton mandar", e)
         driver.close()
 
     # Now we need to search the keyword Banco, in my case Banco de Chile is the unique account that i Use
@@ -91,16 +247,16 @@ def scraping_emails():
         mes = hoy.month
         # Calcular primer y último día del mes
         primer_dia = date(año, mes, 1)
-        ultimo_dia = date(año, mes, calendar.monthrange(año, mes)[1])
         # Generar la query
-        search_query = f"from:{bank} after:{primer_dia.strftime('%Y/%m/%d')} before:{(ultimo_dia + timedelta(days=1)).strftime('%Y/%m/%d')}"
-        print(search_query)
+        search_query = f"from:{banco} after:{primer_dia.strftime('%Y/%m/%d')}"
+        print("🔎 Ingresando query de búsqueda:", search_query)
 
         search_bar.send_keys(search_query)
         search_bar.send_keys(Keys.RETURN)
+        print(f"✅ Query ingresada")
 
-    except:
-        #print("Error en la barra de busqueda")
+    except Exception as e:
+        print("Error en la barra de busqueda", e)
         driver.close()
 
     #print("Se supone que estamos ya filtrado por Banco de Chile")
@@ -134,8 +290,33 @@ def scraping_emails():
     # Return the dicctionary of emails.
     def access_all_emails_on_page(driver):
         emails = driver.find_elements(By.CSS_SELECTOR, "tr.zA")
-        #print(emails)
-        return emails
+        #return emails
+        # Obtener tanto emails individuales como conversaciones
+        all_elements = driver.find_elements(By.CSS_SELECTOR, "tr.zA, div[role='listitem']")
+        
+        expanded_emails = []
+        for element in all_elements:
+            try:
+                # Intentar detectar si es un contenedor de conversación
+                if "Hilo" in element.get_attribute("aria-label") or "Conversation" in element.get_attribute("aria-label"):
+                    # Expandir si está colapsado
+                    try:
+                        expand_btn = element.find_element(By.CSS_SELECTOR, "div[aria-expanded='false']")
+                        expand_btn.click()
+                        sleep(1)
+                        
+                        # Obtener emails dentro de la conversación
+                        thread_emails = element.find_elements(By.XPATH, ".//tr[contains(@class, 'zA')]")
+                        expanded_emails.extend(thread_emails)
+                    except NoSuchElementException:
+                        # Si no tiene botón de expandir, es un email normal
+                        expanded_emails.append(element)
+                else:
+                    expanded_emails.append(element)
+            except Exception:
+                expanded_emails.append(element)
+                
+        return expanded_emails
 
     # First of all the function print the class of each the element
     # Next proceed to print  the email number in the dicctionary, from and asunto of each email
@@ -146,57 +327,53 @@ def scraping_emails():
         transferencias_a_terceros = 0
         transferencias_de_terceros = 0
         devoluciones = 0
-
-
+        
         # Depending on the data type the function return a list that will append later
         def clean_list(lista):
-                #print("Entrando a Clean_list")
-                lista_final = []
-                for strings in lista:
-                    #print("TIPO DE DATO: ", type(strings))
-                    if type(strings) == type("abc m"):
-                        #print("STRING A PROCESAR: ", strings)
-                        if strings == None:
-                            continue
-                        elif "Te informamos que se ha realizado una compra por " in strings:
-                            str_recortada = strings.replace("Te informamos que se ha realizado una compra por ","")
-                            str_recortada = str_recortada.replace(" con cargo a Cuenta ",";")
-                            str_recortada = str_recortada.replace(" en ", ";")
-                            str_recortada = str_recortada.replace(" el ", ";")
-                            str_recortada = str_recortada.replace(".", "")
-                            str_recortada = str_recortada.replace("Clemente Arturo Sanhueza Carvajal: ", "")
-                            str_recortada = str_recortada.replace("$", "-")
-                            str_lista = str_recortada.split(";")
-                            str_lista[3] = str_lista[3].split(" ")
-                            lista_final.append(str_lista) 
-                        elif "Te informamos que tu devolución por" in strings:
-                            str_recortada = strings.replace("Te informamos que tu devolución por ", "")
-                            str_recortada = str_recortada.replace("Clemente Arturo Sanhueza Carvajal: ", "")
-                            str_recortada = str_recortada.replace("$", "+")
-                            str_recortada = str_recortada.replace(" desde ", ";")
-                            str_recortada = str_recortada.replace(", el ", ";")
-                            str_recortada = str_recortada.replace(".", "")
-                            str_recortada = str_recortada.replace(", a las", "")
-                            str_recortada = str_recortada.replace(", está en proceso de validación y será abonada en tu cuenta terminada en ", ";")
-                            str_recortada = str_recortada.replace(" dentro de las próximas 48 horas hábiles", "")
-                            str_lista = str_recortada.split(";")
-                            str_lista[2] = str_lista[2].split(" ")
-                            lista_orden_correcto = [str_lista[0], str_lista[3], str_lista[1], str_lista[2]]
-                            lista_orden_correcto[3][1] += lista_orden_correcto[3][2]
-                            lista_orden_correcto[3].pop()
-                            print(lista_orden_correcto)
-                            lista_final.append(lista_orden_correcto)
-                    elif type(strings) == dict:
-                        print("Diccionario detectado")
-                        lista_final.append([strings.get("Monto"),  "****2094", strings.get("Destinatario") ,[strings.get("Fecha"),strings.get("Hora")]])
-                        print("APENDIADO DICCIONARIO A LISTA FINAL")
-                        print(lista_final)
-                return lista_final
+            #print("Entrando a Clean_list")
+            lista_final = []
+            for strings in lista:
+                #print("TIPO DE DATO: ", type(strings))
+                if type(strings) == type("abc m"):
+                    #print("STRING A PROCESAR: ", strings)
+                    if strings == None:
+                        continue
+                    elif "Te informamos que se ha realizado una compra por " in strings:
+                        str_recortada = strings.replace("Te informamos que se ha realizado una compra por ","")
+                        str_recortada = str_recortada.replace(" con cargo a Cuenta ",";")
+                        str_recortada = str_recortada.replace(" en ", ";")
+                        str_recortada = str_recortada.replace(" el ", ";")
+                        str_recortada = str_recortada.replace(".", "")
+                        str_recortada = str_recortada.replace("Clemente Arturo Sanhueza Carvajal: ", "")
+                        str_recortada = str_recortada.replace("$", "-")
+                        str_lista = str_recortada.split(";")
+                        str_lista[3] = str_lista[3].split(" ")
+                        lista_final.append(str_lista) 
+                    elif "Te informamos que tu devolución por" in strings:
+                        str_recortada = strings.replace("Te informamos que tu devolución por ", "")
+                        str_recortada = str_recortada.replace("Clemente Arturo Sanhueza Carvajal: ", "")
+                        str_recortada = str_recortada.replace("$", "+")
+                        str_recortada = str_recortada.replace(" desde ", ";")
+                        str_recortada = str_recortada.replace(", el ", ";")
+                        str_recortada = str_recortada.replace(".", "")
+                        str_recortada = str_recortada.replace(", a las", "")
+                        str_recortada = str_recortada.replace(", está en proceso de validación y será abonada en tu cuenta terminada en ", ";")
+                        str_recortada = str_recortada.replace(" dentro de las próximas 48 horas hábiles", "")
+                        str_lista = str_recortada.split(";")
+                        str_lista[2] = str_lista[2].split(" ")
+                        lista_orden_correcto = [str_lista[0], str_lista[3], str_lista[1], str_lista[2]]
+                        lista_orden_correcto[3][1] += lista_orden_correcto[3][2]
+                        lista_orden_correcto[3].pop()
+                        print(lista_orden_correcto)
+                        lista_final.append(lista_orden_correcto)
+                elif type(strings) == dict:
+                    lista_final.append([strings.get("Monto"),  "****2094", strings.get("Destinatario") ,[strings.get("Fecha"),strings.get("Hora")]])
+            return lista_final
 
         # Append the text from the list as argument to the txt
         def append_on_txt(lista):
             list_of_lists = clean_list(lista=lista)
-            print(list_of_lists)
+            
             for linea in list_of_lists:
                 writting_on_txt(linea[3][0], linea[3][1], linea[0], linea[2], linea[1])
 
@@ -204,7 +381,6 @@ def scraping_emails():
         # In case that the actual mail day is less resent that first transaction return True
         def day_already_pass(day_of_email):
             lista_año_dia = day_of_email.split(" ")
-            print(lista_año_dia, "LISTA AÑO DIA")
             day_of_email =  datetime.strptime(f"{lista_año_dia[0]} {lista_año_dia[1]}", "%d/%m/%Y %H:%M")
             with open("Transactions", "r") as f:
                 linea = f.readline().rstrip().split(";")
@@ -242,7 +418,6 @@ def scraping_emails():
                 # 4. Filtrar solo la línea relevante
                 lineas = [linea.strip() for linea in texto_completo.split('\n') if linea.strip()]
                 mensaje_compra = next((linea for linea in lineas if "Te informamos" in linea), None)
-                
                 return mensaje_compra or texto_completo[:200] + "..."  # Fallback con fragmento
                 
             except TimeoutException:
@@ -701,6 +876,8 @@ def scraping_emails():
 
             elif bank == "EDWARDS":
                 return Edwards_Bank_Case(driver=driver, email_element=email_element)
+            
+            print("✅ Transferencia  registrada")
 
         # The function extract the value information of transfer of money emails.
         # The case that this function cover is when you give money
@@ -868,21 +1045,25 @@ def scraping_emails():
             string += lista[0] + "/" + str(MESES_ES.get(lista[1])) + "/" + lista[2]
             return string
 
-
         strings_Cargo_apendiar = []
-
+        threads = defaultdict(list)
         for i, email in enumerate(emails, 1):
             fecha = False
+            thread_id = email.get_attribute("data-thread-id") or "solo"
+            threads[thread_id].append(email)
+
             if i in range(0, 51):
                 continue
+            
             else:
                 texto = ""
+                
                 try:
                     remitente = email.find_element(By.CSS_SELECTOR, "span[email]").get_attribute("email")
                     asunto = email.find_element(By.CSS_SELECTOR, "span.bog").text
-                    fragmento = email.find_element(By.CSS_SELECTOR, "span.y2").text
+                    #fragmento = email.find_element(By.CSS_SELECTOR, "span.y2").text
 
-                    print(f"[✔] Leyendo mail: De: {remitente} | Asunto: {asunto} | Fragmento: {fragmento}")
+                    print(f"✅ Leyendo mail: De: {remitente} | Asunto: {asunto}")
                     # Hacer caso de devolución
                     if "Devolución".lower() in asunto.lower():
                         devoluciones += 1
@@ -896,10 +1077,10 @@ def scraping_emails():
                     elif "Cargo".lower() in asunto.lower():
                         cargos += 1
                         texto = charge_on_bank_account(driver=driver, email_element=email)
-                        print("TEXTO CARGO\n", texto)
                         lista = clean_list([texto])
                         fecha = day_already_pass(f"{lista[0][3][0]} {lista[0][3][1]}")
                         strings_Cargo_apendiar.append(texto)
+                        print("✅ Cargo registrado")
 
                     # Hacer caso transferencias
                     # Distinguir hechas de recibidas
@@ -920,11 +1101,9 @@ def scraping_emails():
                             # Banco BICE
                             if "Recibiste una transferencia".lower() in asunto.lower():
                                 texto = transfer_founds_to_you(driver=driver, email_element=email, bank="BICE")
-                                print("\n", texto, "\n")
-                                print("Siguiente paso: FECHA STR")
+                                #print("\n", texto, "\n")
                                 fecha = day_already_pass(texto.get("Fecha") + " " +  texto.get("Hora"))
                                 strings_Cargo_apendiar.append(texto)
-                                print("APENDIANDO A LISTA PA CARGAR", strings_Cargo_apendiar)
                             # Banco ITAU
                             elif "itau informa".lower() in asunto.lower():
                                 texto = transfer_founds_to_you(driver=driver, email_element=email, bank="ITAU")
@@ -932,7 +1111,6 @@ def scraping_emails():
                                 #print("Siguiente paso: FECHA STR")
                                 fecha = day_already_pass(texto.get("Fecha") + " " +  texto.get("Hora"))
                                 strings_Cargo_apendiar.append(texto)
-                                print("APENDIANDO A LISTA PA CARGAR", strings_Cargo_apendiar)
 
                             # Banco Edwards
                             elif "Transferencia de fondos".lower() in asunto.lower():
@@ -941,29 +1119,37 @@ def scraping_emails():
                                 print("Siguiente paso: FECHA STR")
                                 fecha = day_already_pass(texto.get("Fecha") + " " +  texto.get("Hora"))
                                 strings_Cargo_apendiar.append(texto)
-                                print("APENDIANDO A LISTA PA CARGAR", strings_Cargo_apendiar)
+                            
+                            # Banco Security
+                            elif "Transferencia de fondos".lower() in asunto.lower():
+                                texto = transfer_founds_to_you(driver=driver, email_element=email, bank="SECURITY")
+                                print("\n", texto, "\n")
+                                print("Siguiente paso: FECHA STR")
+                                fecha = day_already_pass(texto.get("Fecha") + " " +  texto.get("Hora"))
+                                strings_Cargo_apendiar.append(texto)
+                            print("✅ Transferencia registrada")
                         transferencias += 1
                     
-                    if texto != "":
-                        print("\n", texto, "\n")
-
+                    #if texto != "":
+                    #    print("\n", texto, "\n")
                     #print(f"Contenido: {contenido}")
                 except Exception as e:
                     print(f"\nError procesando email #{i}: {str(e)}\n")
 
             if fecha == True:
                 strings_Cargo_apendiar.pop()
-                print(strings_Cargo_apendiar)
                 append_on_txt(lista=strings_Cargo_apendiar)
-                print("CARGO A APPENDEAR", strings_Cargo_apendiar)
+                #print("CARGO A APPENDEAR", strings_Cargo_apendiar)
                 sort_transaction_txt()
                 print(f"Cargos: {cargos}\nTransferencias: {transferencias}\nDevoluciones: {devoluciones}")
                 calcular_total()
                 parar = True
                 sys.exit()
                 return 
-            
+
         append_on_txt(lista=strings_Cargo_apendiar)
+        verificar_mensaje_no_resultados(driver=driver)
+        print(f"\n📊 Resumen Final:\n")
         print(f"Cargos: {cargos}\nTransferencias: {transferencias}\nTransferencias de terceros: {transferencias_de_terceros}\nTransferencias a terceros: {transferencias_a_terceros}\nDevoluciones: {devoluciones}\n")
 
     # Verify if the mennsage of No resultados arrise.
@@ -977,7 +1163,6 @@ def scraping_emails():
                     (By.XPATH, "//*[contains(text(), 'No hay ningún mensaje que coincida')]")
                 )
             )
-            print("Mensaje de 'no resultados' detectado")
             return True
         except:
             return False
@@ -986,159 +1171,16 @@ def scraping_emails():
     next_page(driver=driver, main_page=pagina_principal, parar=parar)
     sort_transaction_txt()
 
-# We need to do a efficient code so if we already search an email we don't need to search again
-# for each email we extract the next information
-# Day, Hour, amount, income or outcome with a sign in amount and place.
-# To separate we will use ;
-def writting_on_txt(Day, Hour, amount, place, card_number):
-    with open("Transactions", "a") as f:
-        print(f"{Day};{Hour};{amount};{place};{card_number}", file=f)
-
-
-# In order to do an efficient Code, we need to sort the Transactions txt for hour and Day
-# This function will be use at the end of next_page function when all new transactions are already upload
-def sort_transaction_txt():
-    with open("Transactions", "r") as f:
-        # We put the txt as a arrange of list
-        lineas = f.readlines()
-        for k in range(len(lineas)):
-            lineas[k] = lineas[k].rstrip().split(";")
-        
-        print(lineas)
-        for k in range(len(lineas)):
-            #print(lineas)
-            lineas[k][1] = datetime.strptime(lineas[k][1], "%H:%M")
-            lineas[k][0] = datetime.strptime(lineas[k][0], "%d/%m/%Y")
-        
-        lineas_por_hora = sorted(lineas, key=lambda x: x[1], reverse=True)
-        lineas_por_dia = sorted(lineas_por_hora, key=lambda x: x[0], reverse=True)
-
-        for k in range(len(lineas_por_dia)):
-            lineas_por_dia[k][0] = datetime.strftime(lineas_por_dia[k][0], "%d/%m/%Y")
-            lineas_por_dia[k][1] = datetime.strftime(lineas_por_dia[k][1], "%H:%M")
-        
-        with open("transactions", "w") as f:
-            for k in range(len(lineas_por_dia)):
-                print(f"{lineas_por_dia[k][0]};{lineas_por_dia[k][1]};{lineas_por_dia[k][2]};{lineas_por_dia[k][3]};{lineas_por_dia[k][4]}", file=f)
-
-
-def saldo_inicial(Day, Hour, amount, place, card_number):
-    archivo = open("Transactions", "w")
-    archivo.close()
-    
-    with open("Transactions", "r") as f:
-        lineas = f.readlines()
-        for k in range(len(lineas)):
-            lineas[k] = lineas[k].rstrip().split(";")
-    if [f"{Day}",f"{Hour}",f"{amount}",f"{place}",f"{card_number}"] in lineas:
-        pass
-    else:
-        writting_on_txt(Day, Hour, amount, place, card_number)
-        sort_transaction_txt()
-
-
-# Diccionario para traducir meses en español a números
-MESES_ES = {
-    'enero': 1, 'ene': 1, 'febrero': 2, 'feb': 2, 'marzo': 3, 'mar': 3, 'abril': 4, 'abr': 4, 
-    'mayo': 5, 'may': 5, 'junio': 6, 'jun': 6, 'julio': 7, 'jul': 7, 'agosto': 8, 'ago': 8,
-    'septiembre': 9, 'sep': 9, 'octubre': 10, 'oct': 10, 'noviembre': 11, 'nov': 11, 
-    'diciembre': 12, 'dic': 12
-}
-
-# Return the balance of Transaction.txt
-def calcular_total():
-    with open("Transactions", "r") as f:
-        total = 0
-        lineas = f.readlines()
-        for k in range(len(lineas)):
-            lineas[k] = lineas[k].rstrip().split(";")
-            try:
-                total += int(lineas[k][2])
-            except:
-                continue
-        return total
-
-def mandar_total(monto):
-    """chrome_options = Options()
-    chrome_options.add_experimental_option(name="excludeSwitches", value=["enable-logging", "enable-automation"])
-    chrome_options.add_experimental_option(name="useAutomationExtension", value=False)
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    service = Service(ChromeDriverManager().install())
-
-    driver2 = webdriver.Chrome(service=service, options=chrome_options)
-    # (Opcional) ruta a tu ChromeDriver
-    service = Service('/usr/local/bin/chromedriver')  # Cambia si es necesario
-
-    # Configura opciones para evitar advertencias o errores
-    options = webdriver.ChromeOptions()
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-features=BlockExternalProtocolInWee,NetworkService,NetworkServiceInProcess')
-    options.add_argument('--disable-background-networking')
-    options.add_argument('--disable-default-apps')
-    options.add_argument('--disable-extensions')
-    options.add_argument('--disable-sync')
-    options.add_argument('--no-first-run')
-    options.add_argument('--no-default-browser-check')
-    
-    driver2 = webdriver.Chrome(service=service, options=options)
-    # Here we get the main page of mail from google
-    driver2.get("http://192.168.4.1")
-    sleep(3)
-
-    # Encontrar el campo de texto (puedes ajustar el selector si cambia)
-    input_box = WebDriverWait(driver2, 10).until(
-        EC.presence_of_element_located((By.NAME, "message"))
-    )
-    string = "Saldo: $" + str(monto)
-    input_box.send_keys(string)
-
-    # Enviar el formulario (puede ser presionando Enter o clic en el botón)
-    input_box.send_keys(Keys.ENTER)
-    # Esperar un poco para ver el resultado
-    sleep(5)
-    driver2.quit()"""
-
-    string = "Saldo: $" + str(monto)
-    try:
-        response = requests.get("http://192.168.4.1", params={"message": string}, timeout=5)
-        if response.ok:
-            print("Mensaje enviado correctamente.")
-        else:
-            print("Error al enviar:", response.status_code)
-    except requests.exceptions.RequestException as e:
-        print("Error de conexión al ESP:", e)
-
-def calcular_gasto_diario(saldo):
-    hoy = date.today()
-    dias_totales = calendar.monthrange(hoy.year, hoy.month)[1]
-    dias_restantes = dias_totales - hoy.day + 1  # incluye hoy
-
-    if dias_restantes <= 0:
-        return 0  # Evita división por cero
-
-    gasto_diario = saldo / dias_restantes
-    return round(gasto_diario)
-
-def calcular_porcentaje_restante(saldo_actual, saldo_inicial):
-    if saldo_inicial == 0:
-        return 0  # Evita división por cero
-    
-    porcentaje = round((saldo_actual / saldo_inicial) * 100)
-    string = f"Porcentaje restante: {porcentaje}%"
-    return string
-
 if __name__ == "__main__":
-    saldo_inicial("1/04/2025", "00:00", "+150000", "Cantidad inicial", "****2094")
-    scraping_emails()
+    scraping_emails(sys.argv)
     total = calcular_total()
     gasto_diario = calcular_gasto_diario(total)
     porcentaje_restante = calcular_porcentaje_restante(total, 150000)
-    string = "Saldo: $" + str(total)
+    string = "💰 Saldo actual: $" + str(total)
     print(string)
-    string = "Hoy deberías gastar: $" + str(gasto_diario)
-    print(string)
-    print("Porcentaje restante: ", porcentaje_restante)
-    sleep(20)
-    mandar_total(total)
+    string = "📆 Gasto diario recomendado: $" + str(gasto_diario)
+    print(string) 
+    print("📈", porcentaje_restante)
+    print("✅ **Proceso de scrapping completado exitosamente** 🚀")
+    #sleep(20)
+    #mandar_total(total)
